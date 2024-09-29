@@ -69,7 +69,7 @@ func (m *Map[K, V]) GetElseSet(key K, fn func() V) <-chan V {
 		return o
 	}
 	m.enqueue(key, o)
-	go func() { m.dequeue(key, fn()) }()
+	go func() { m.dequeueFn(key, fn) }()
 	return o
 }
 
@@ -85,6 +85,26 @@ func (m *Map[K, V]) enqueue(key K, getter chan<- V) {
 func (m *Map[K, V]) dequeue(key K, value V) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// set value for future getters
+	if m.values == nil {
+		m.values = make(map[K]V)
+	}
+	m.values[key] = value
+
+	// clear waiting getters
+	for _, getter := range m.queue[key] {
+		getter <- value // we know this doesn't block because the channel has a buffer of 1
+		close(getter)
+	}
+	delete(m.queue, key)
+}
+
+func (m *Map[K, V]) dequeueFn(key K, fn func() V) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	value := fn()
 
 	// set value for future getters
 	if m.values == nil {

@@ -2,7 +2,9 @@ package async
 
 import (
 	"testing"
+	"time"
 
+	"github.com/jamesrom/order/atomicbit"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -67,6 +69,27 @@ func TestGetElseSet(t *testing.T) {
 		assert.Equal(t, "world", <-name1)
 		name2 := m.Get("hello")
 		assert.Equal(t, "world", <-name2)
+	})
+
+	t.Run("Lots", func(t *testing.T) {
+		checkBit := atomicbit.New(false)
+		m := new(Map[string, string])
+
+		for i := 0; i < 100; i++ {
+			go func() {
+				m.GetElseSet("hello", func() string {
+					if checkBit.Get() { // fail if this function is called more than once
+						panic("Producer called more than once")
+					} else {
+						t.Log("Producer called first time")
+					}
+					checkBit.Flip()
+					time.Sleep(time.Second)
+					return "world"
+				})
+			}()
+		}
+		assert.True(t, checkBit.Get())
 	})
 }
 
